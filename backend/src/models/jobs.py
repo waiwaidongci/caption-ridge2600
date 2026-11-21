@@ -29,6 +29,7 @@ class Run(Base):
     name: Mapped[str] = mapped_column(String(120))
     status: Mapped[str] = mapped_column(String(20), default=Status.QUEUED, index=True)
     params: Mapped[dict] = mapped_column(JSON)
+    snapshot_id: Mapped[int | None]
     result: Mapped[dict | None] = mapped_column(JSON)
     error: Mapped[str | None] = mapped_column(String(500))
     export_file: Mapped[str | None] = mapped_column(String(100))
@@ -40,6 +41,26 @@ class Run(Base):
     author: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(default=now)
     finished_at: Mapped[datetime | None]
+
+class DayEstimate(Base):
+    """排班日开工前估算：算出后不再改写；验算随迟到与更正实耗补齐。"""
+    __tablename__ = 'day_estimates'
+    __table_args__ = (UniqueConstraint('schedule_day', 'job_id'),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    schedule_day: Mapped[str] = mapped_column(String(10))
+    job_id: Mapped[str] = mapped_column(String(64), index=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey('runs.id'))
+    record_id: Mapped[int] = mapped_column(ForeignKey('job_records.id'))
+    snapshot_id: Mapped[int]
+    estimated_minutes: Mapped[float]
+    flagged: Mapped[str] = mapped_column(String(20))
+    reason: Mapped[str] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(default=now)
+    verify_record_id: Mapped[int | None] = mapped_column(ForeignKey('job_records.id'))
+    verify_actual: Mapped[float | None]
+    verify_error: Mapped[float | None]
+    verified_at: Mapped[datetime | None]
 
 class Delivery(Base):
     __tablename__ = 'deliveries'

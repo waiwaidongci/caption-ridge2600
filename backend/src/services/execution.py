@@ -3,9 +3,9 @@ from datetime import date, timedelta
 from sqlalchemy import and_, or_, select
 from src.config.database import Session
 from src.constants.enums import Status
-from src.domain.analysis import analyze
+from src.domain.replay import latest_snapshot, replay
 from src.domain.spec import SPEC
-from src.models.jobs import Delivery, Run, Schedule
+from src.models.jobs import DayEstimate, Delivery, Run, Schedule
 from src.models.source import Dataset
 from src.services.audit import record
 from src.utils.exports import write_report
@@ -57,15 +57,42 @@ def claim():
         job.status = Status.RUNNING
         job.attempt += 1
         job.lease_until = stamp + timedelta(minutes=3)
-        records = db.get(Dataset, job.dataset_id).rows
-        return job.id, job.attempt, records, job.params
+        # 钉住版本库高水位：本次重算的页面与下载只看这批版本，并发补录不会混入。
+        job.snapshot_id = latest_snapshot(db)
+        return job.id, job.attempt, job.snapshot_id, job.params
+
+
+def _publish(db, job, snapshot_id, new_estimates, verify_changes):
+    """新估算、验算补齐与运行结果在同一事务发布；旧日估算只插不改。"""
+    existing = {(row.schedule_day, row.job_id) for row in db.scalars(select(DayEstimate))}
+    added = False
+    for item in new_estimates:
+        if (item['schedule_day'], item['job_id']) in existing:
+            continue
+        db.add(DayEstimate(run_id=job.id, snapshot_id=snapshot_id, **item))
+        added = True
+    if added:
+        db.flush()
+    if verify_changes:
+        rows = {(row.schedule_day, row.job_id): row for row in db.scalars(select(DayEstimate))}
+        stamp = now()
+        for key, change in verify_changes.items():
+            row = rows.get(key)
+            if row is None or row.verify_record_id == change['verify_record_id']:
+                continue
+            row.verify_record_id = change['verify_record_id']
+            row.verify_actual = change['verify_actual']
+            row.verify_error = change['verify_error']
+            row.verified_at = stamp
 
 
 def execute(lease):
-    job_id, attempt, rows, params = lease
+    job_id, attempt, snapshot_id, params = lease
     result = export = failure = None
+    new_estimates, verify_changes = [], {}
     try:
-        result = analyze(rows, params)
+        with Session() as db:
+            result, new_estimates, verify_changes = replay(db, params, snapshot_id)
         export = write_report(job_id, attempt, result)
     except ValueError as error:
         failure = str(error)[:500]
@@ -76,6 +103,9 @@ def execute(lease):
         job = db.get(Run, job_id, with_for_update=True)
         if job.attempt != attempt or job.status != Status.RUNNING:
             return
+        # 失败分支不写任何估算与结果，旧版完整结果原样保留。
+        if not failure:
+            _publish(db, job, snapshot_id, new_estimates, verify_changes)
         job.lease_until = None
         job.finished_at = now()
         job.status = Status.FAILED if failure else Status.COMPLETE

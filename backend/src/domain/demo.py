@@ -1,6 +1,6 @@
 """青阶讲堂的确定性完工记录和待审工单。"""
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 
 _SERIES = ("城市更新案例", "古籍数字化", "开放课程工作坊", "材料科学午间讲座", "纪录片声音设计")
@@ -45,3 +45,23 @@ def demo_rows() -> list[dict]:
             "actual_minutes": None,
         })
     return rows
+
+
+def _take(rows, job_id, actual):
+    row = next(item for item in rows if item["job_id"] == job_id)
+    return {**row, "actual_minutes": actual}
+
+
+def demo_batches() -> list[tuple[str, str, list[dict], datetime]]:
+    """演示时间线：班前批次、当晚补录、隔日实耗与更正，按收到时间先后入库。"""
+    base = demo_rows()
+    late = [_take(base, "QJ-N01", 34.15), _take(base, "QJ-N02", 87.04)]
+    corrections = [_take(base, "QJ-N01", 36.5), _take(base, "QJ-N03", 61.5), _take(base, "QJ-N04", 146.23)]
+    return [
+        ("青阶讲堂字幕工单（11 月 9 日班前到）", "青阶讲堂字幕工时_20261109.csv",
+         base, datetime(2026, 11, 9, 20, 0)),
+        ("11 月 10 日补录实耗（当晚到）", "青阶讲堂补录_20261110.csv",
+         late, datetime(2026, 11, 10, 21, 30)),
+        ("11 月 12 日实耗与更正", "青阶讲堂更正_20261112.csv",
+         corrections, datetime(2026, 11, 12, 8, 0)),
+    ]

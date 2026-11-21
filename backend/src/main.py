@@ -4,10 +4,11 @@ from fastapi import FastAPI
 from sqlalchemy import text
 from scripts.seed_demo import seed
 from src.config.database import Base, engine
+from src.config.migrate import migrate
 from src.config.settings import SEED_DEMO
 from src.domain.spec import SPEC
 from src.middlewares import errors, headers, rate
-from src.routes import distribution, identity, registry, runs
+from src.routes import distribution, identity, orders, registry, runs
 from src.utils.wakeup import broker
 
 log = logging.getLogger(__name__)
@@ -16,6 +17,7 @@ log = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_app):
     Base.metadata.create_all(engine)
+    migrate()
     if SEED_DEMO:
         try:
             log.info('Seeded %s', seed())
@@ -29,7 +31,7 @@ app = FastAPI(title=SPEC['title'], lifespan=lifespan)
 errors.install(app)
 headers.install(app)
 rate.install(app)
-for module in (identity, registry, runs):
+for module in (identity, registry, runs, orders):
     app.include_router(module.router)
 if SPEC.get('scheduled'):
     app.include_router(distribution.router)

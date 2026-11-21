@@ -221,6 +221,10 @@ def analyze(rows, normalized_params):
         "headline": f"选定「{group}」λ={penalty:g}，已估算 {len(queue)} 条待审工单，其中 {flagged} 条需核排。",
         "note": (f"训练 {len(training)} 条，选型 {len(selection)} 条，留出 {len(holdout)} 条。"
                  "最后一段独立评估，待审工时沿用同一个模型。"),
+        "selected": {"group": group, "penalty": penalty},
+        "queue": queue,
+        "stages": stages,
+        "holdout_mae": round(mae, 4),
         "metrics": [
             {"label": "选型 MAE（分钟）", "value": round(selection_mae, 4), "detail": "入选模型在选型集上的平均绝对误差"},
             {"label": "留出 MAE（分钟）", "value": round(mae, 4), "detail": "平均绝对误差"},
